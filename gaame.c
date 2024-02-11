@@ -4,8 +4,8 @@
 
 #define STR 25
 #define COL 80
-#define FIELD_WIDTH 82
-#define FIELD_HEIGHT 27
+#define FIELD_WIDTH 81
+#define FIELD_HEIGHT 26
 
 void input_matrix(int matr[STR][COL]);
 void update_matrix(int matr1[STR][COL], int matr2[STR][COL]);
@@ -19,7 +19,17 @@ void first_Pattern(int cur_State[STR][COL]);
 
 int main() {
     int matr1[STR][COL], matr2[STR][COL], time_mili_sec = 500, stop = 0;
-    first_Pattern(matr1);
+     char manual_input;
+     printf("Желаете ли вы ввести данные вручную? (y/n): ");
+    scanf(" %c", &manual_input);
+    
+    if (manual_input == 'y' || manual_input == 'Y') {
+        while (getchar() != '\n'); // Очистка буфера ввода
+        printf("Введите данные вручную:\n");
+        input_matrix(matr1);
+    } else {
+        first_Pattern(matr1);
+    }
     if (freopen("/dev/tty", "r", stdin)) initscr();
     nodelay(stdscr, true);
 
