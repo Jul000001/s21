@@ -1,144 +1,104 @@
-#include <ncurses.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
-#define STR 25
-#define COL 80
-#define FIELD_WIDTH 82
-#define FIELD_HEIGHT 27
+#define HEIGHT 25
+#define WIDTH 80
 
-void input_matrix(int matr[STR][COL]);
-void update_matrix(int matr1[STR][COL], int matr2[STR][COL]);
-int count_neighbors(int matr1[STR][COL], int i, int j);
-int decision(int neighbors, int condition);
-void replace(int matr2[STR][COL], int matr1[STR][COL]);
-int check(int matr1[STR][COL], int matr2[STR][COL]);
-int change_speed(char control_button, int *flag, int time_mili_sec);
-int count(int matr[STR][COL]);
-void first_Pattern(int cur_State[STR][COL]);
+#define fori(i, n) for (int i = 0; i < n; i++)
+#define fori2(x, w, y, h) fori(x, w) fori(y, h)
+#define foriq(i, n) for (int i = -1; i < n; i++)
+#define foriq2(x, w, y, h) foriq(x, w) foriq(y, h)
+
+int input(int **map);
+void speed(int *pause);
+void render_map(int **map);
+int status_quo(int **map, int x, int y);
+int calculate(int **map);
+void clearScreen();
 
 int main() {
-    int matr1[STR][COL], matr2[STR][COL], time_mili_sec = 500, stop = 0;
-    char manual_input;
-    
-    printf("Желаете ли вы ввести данные вручную? (y/n): ");
-    scanf(" %c", &manual_input);
-    
-    if (manual_input == 'y' || manual_input == 'Y') {
-        while (getchar() != '\n'); // Очистка буфера ввода
-        printf("Введите данные вручную:\n");
-        input_matrix(matr1);
+    int **map = malloc(HEIGHT * sizeof(int *));  // выделение памяти на указатели строк матрицы
+    fori(i, HEIGHT) map[i] = malloc(WIDTH * sizeof(int));  // выделение памяти на матрицу
+    int delta_time;
+    if (input(map) != -1 && freopen("/dev/tty", "r", stdin) != NULL) {  // ввод данных
+        speed(&delta_time);                                             // ввод данных
+        render_map(map);                                                // отрисовка экрана
+        int flagEqual = 1;
+        while (flagEqual == 1) {         // цикл игры
+            flagEqual = calculate(map);  // высчитывание параметров клеток
+            clearScreen();               // очистка экрана
+            render_map(map);             // отрисовка экрана
+            printf("\nДля выхода из игры нажмите клавишу \'Ctrl + C\'\n");
+            usleep(delta_time);  // сон игры на delta_time милисекунд
+        }
     } else {
-        first_Pattern(matr1);
+        printf("Введены некорректные данные! Повторите запуск игры снова!");
     }
-    
-    if (freopen("/dev/tty", "r", stdin)) initscr();
-    nodelay(stdscr, true);
-
-    while (stop != 1) {
-        char control_button = getch();
-        if (count(matr1) == 0) stop = 1;
-        time_mili_sec = change_speed(control_button, &stop, time_mili_sec);
-        usleep(time_mili_sec * 1000);
-        clear();
-        update_matrix(matr1, matr2);
-        if (check(matr1, matr2) == 2000) stop = 1;
-        replace(matr2, matr1);
-    }
-
-    endwin();
+    fori(i, HEIGHT) free(map[i]);  // очистка памяти матрицы
+    free(map);  // очистка памяти указателей на строки матрицы
     return 0;
 }
 
-void input_matrix(int matr[STR][COL]) {
-    for (int i = 0; i < STR; i++)
-        for (int j = 0; j < COL; j++) scanf("%d", &matr[i][j]);
+void clearScreen() { printf("\33[0d\33[2J"); }
+
+int input(int **map) {
+    printf("\nВходные значения матрицa 25х80 ");
+    printf("\n(Состояния клетки: 1 - функционирует, 0 - отсутствует)\n");
+    printf("\nВарианты входных данных находятся в дирректории ../datasets\n");
+    int flagError = 1;
+    fori2(x, HEIGHT, y, WIDTH) if (scanf("%d", &map[x][y]) != 1) flagError = -1;
+    fori2(x, HEIGHT, y, WIDTH) if (!(map[x][y] == 0 || map[x][y] == 1)) flagError = -1;
+    return flagError;
 }
 
-void update_matrix(int matr1[STR][COL], int matr2[STR][COL]) {
-    char buffer[FIELD_HEIGHT][FIELD_WIDTH + 1]; // +1 для символа конца строки '\0'
-    
-    for (int i = 0; i < FIELD_HEIGHT; i++) {
-        for (int j = 0; j < FIELD_WIDTH; j++) {
-            if (i == 0 || j == 0 || i == FIELD_HEIGHT - 1 || j == FIELD_WIDTH - 1) {
-                buffer[i][j] = '#'; // Границы поля
-            } else {
-                matr2[i][j] = decision(count_neighbors(matr1, i, j), matr1[i][j]);
-                if (matr2[i][j] == 1)
-                    buffer[i][j] = 'X'; // Живые клетки
-                else
-                    buffer[i][j] = '.'; // Пустые клетки
-            }
+void speed(int *delta) {
+    int speed;
+    printf("\nВведите скорость игры (Режимы: 1 - медленно, 2 - средне, 3 - быстро)\n");
+    if (scanf("%d", &speed) == 1) {
+        if (speed == 1) {
+            *delta = 1000000;
+        } else if (speed == 2) {
+            *delta = 100000;
+        } else if (speed == 3) {
+            *delta = 10000;
+        } else {
+            printf("Введено не корректное значение\n");
         }
-        buffer[i][FIELD_WIDTH] = '\0'; // Добавляем символ конца строки
-    }
-
-    // Выводим буфер на экран
-    for (int i = 0; i < FIELD_HEIGHT; i++) {
-        printw("%s\n", buffer[i]);
+    } else {
+        printf("Введено не корректное значение\n");
     }
 }
 
-int count_neighbors(int matr1[STR][COL], int i, int j) {
-    int sum = 0, di[] = {-1, -1, -1, 0, 0, 1, 1, 1}, dj[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-    for (int k = 0; k < 8; k++) sum += matr1[(i + di[k] + STR) % STR][(j + dj[k] + COL) % COL];
-    return sum;
-}
-
-int decision(int neighbors, int condition) {
-    return (neighbors == 3 || (neighbors == 2 && condition == 1)) ? 1 : 0;
-}
-
-void replace(int matr2[STR][COL], int matr1[STR][COL]) {
-    for (int i = 0; i < STR; i++)
-        for (int j = 0; j < COL; j++) matr1[i][j] = matr2[i][j];
-}
-
-int check(int matr1[STR][COL], int matr2[STR][COL]) {
-    int ans = 0;
-    for (int i = 0; i < STR; i++)
-        for (int j = 0; j < COL; j++) if (matr1[i][j] == matr2[i][j]) ans++;
-    return ans;
-}
-
-int change_speed(char control_button, int *flag, int time_mili_sec) {
-    switch (control_button) {
-        case '1': time_mili_sec = 900; break;
-        case '2': time_mili_sec = 400; break;
-        case '3': time_mili_sec = 70; break;
-        case 'q': *flag = 1; break;
+void render_map(int **map) {
+    fori(x, HEIGHT) {
+        fori(y, WIDTH)(map[x][y] == 1) ? printf("O") : printf(".");
+        printf("\n");
     }
-    return time_mili_sec;
+    printf("\n");
 }
 
-int count(int matr[STR][COL]) {
-    int sum = 0;
-    for (int i = 0; i < STR; i++)
-        for (int j = 0; j < COL; j++) sum += matr[i][j];
-    return sum;
+int status_quo(int **map, int x, int y) {
+    int count_figure = 0;  // счётчик рядом стоящих фигур
+    foriq2(i, 2, j, 2) if (!(i == 0 && j == 0)) count_figure +=
+        map[(x + HEIGHT + i) % HEIGHT][(y + WIDTH + j) % WIDTH];
+    return count_figure;  // сумма всех клеток в квадрате 3х3 с вычетом самой клетки
 }
 
-void first_Pattern(int cur_State[STR][COL]) {
-    int flag = 1;
-    FILE *fp;
-    do {
-        char *patt = "pattern";
-        char *ext = ".txt";
-        char num;
-
-        printf("Введите номер паттерна (1-5):\n");
-        scanf("%c", &num);
-        char file_Name[13];
-        snprintf(file_Name, sizeof file_Name, "%s%c%s", patt, num, ext);
-        if ((fp = fopen(file_Name, "r")) != NULL) {
-            flag = 0;
-        }
-        printf("\033[0d\033[2J");
-    } while (flag);
-    for (int i = 0; i < STR; i++) {
-        for (int j = 0; j < COL; j++) {
-            fscanf(fp, "%d", &cur_State[i][j]);
+int calculate(int **map) {
+    int map_new[HEIGHT][WIDTH];
+    int flagEqual = -1;
+    fori2(x, HEIGHT, y, WIDTH) {
+        int count_figure = status_quo(map, x, y);
+        if (count_figure == 3) {
+            map_new[x][y] = 1;
+        } else if (count_figure == 2 && map[x][y] == 1) {
+            map_new[x][y] = 1;
+        } else {
+            map_new[x][y] = 0;
         }
     }
-    fclose(fp);
+    fori2(x, HEIGHT, y, WIDTH) if (map[x][y] != map_new[x][y]) flagEqual = 1;
+    fori2(x, HEIGHT, y, WIDTH) map[x][y] = map_new[x][y];
+    return flagEqual;
 }
